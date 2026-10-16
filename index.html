@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>병기본 마스터</title>
+  <meta name="description" content="정신전력 백지암기 · 화생방 질의응답 병기본평가 대비 앱">
+  <meta name="theme-color" content="#4255ff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="병기본">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="hdr">
+    <button id="hdr-back" class="hdr-back" hidden aria-label="뒤로">‹</button>
+    <h1 id="hdr-title">병기본 마스터</h1>
+  </header>
+  <main id="app"></main>
+  <nav class="tabs">
+    <a class="tab" data-tab="home" href="#home"><span>🏠</span>홈</a>
+    <a class="tab" data-tab="cbrn" href="#cbrn"><span>☢️</span>화생방</a>
+    <a class="tab" data-tab="mind" href="#mind"><span>✍️</span>정신전력</a>
+    <a class="tab" data-tab="stats" href="#stats"><span>📊</span>기록</a>
+  </nav>
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
