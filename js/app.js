@@ -13,7 +13,8 @@
   const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const shuffle = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-  const norm = (s) => String(s).replace(/[\s.,·'"‘’“”<>()\[\]{}:;!?~\-–—\/]/g, '').toLowerCase();
+  // 비교용 정규화: 띄어쓰기·문장부호·기호 전부 무시 (6·25 = 6.25 = 6ㆍ25 = 625)
+  const norm = (s) => String(s).normalize('NFKC').toLowerCase().replace(/[ㆍᆞ]/g, '').replace(/[^\p{L}\p{N}]/gu, '');
   const bigrams = (s) => { const out = new Map(); for (let i = 0; i < s.length - 1; i++) { const b = s.slice(i, i + 2); out.set(b, (out.get(b) || 0) + 1); } return out; };
   const dice = (a, b) => {
     a = norm(a); b = norm(b);
@@ -25,17 +26,56 @@
     B.forEach((v) => { nb += v; });
     return na + nb ? (2 * inter) / (na + nb) : 0;
   };
-  // 키워드가 사용자 텍스트에 얼마나 포함되어 있는지 (0~1)
-  const recall = (kw, text) => {
-    const k = norm(kw), t = norm(text);
-    if (!k) return 1;
-    if (t.includes(k)) return 1;
-    if (k.length < 2) return 0;
-    const K = bigrams(k), T = bigrams(t);
-    let hit = 0, n = 0;
-    K.forEach((v, b) => { n += v; hit += Math.min(v, T.get(b) || 0); });
-    return n ? hit / n : 0;
+  // 편집거리 (오타 허용 판단용)
+  const lev = (a, b) => {
+    a = [...a]; b = [...b];
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[b.length];
   };
+  // 텍스트 안에서 pat와 가장 비슷한 부분의 편집거리와 위치 (근사 부분문자열 검색)
+  const fuzzyFind = (pat, text) => {
+    const P = [...pat], T = [...text], m = P.length;
+    let prev = Array.from({ length: m + 1 }, (_, i) => i), best = m, pos = -1;
+    for (let j = 0; j < T.length; j++) {
+      const cur = [0];
+      for (let i = 1; i <= m; i++) cur[i] = Math.min(prev[i] + 1, cur[i - 1] + 1, prev[i - 1] + (P[i - 1] === T[j] ? 0 : 1));
+      if (cur[m] < best) { best = cur[m]; pos = j; }
+      prev = cur;
+    }
+    return { d: best, pos };
+  };
+  const typoTol = (len) => (len <= 2 ? 0 : len <= 6 ? 1 : 2);
+  const JOSA = /^(은|는|이|가|을|를|의|에|에게|에서|로|으로|와|과|도|만|이다|다|하고|하여|하는|한|이자|으로서|로서|으로써|로써)$/;
+  // 빈칸 채점: exact | near(오타·조사 차이 허용) | ng
+  const judge = (input, answer) => {
+    const u = norm(input), a = norm(answer);
+    if (!u) return 'ng';
+    if (u === a) return 'exact';
+    if (u.length >= 2 && a.startsWith(u) && JOSA.test(a.slice(u.length))) return 'near';
+    if (a.length >= 2 && u.startsWith(a) && JOSA.test(u.slice(a.length))) return 'near';
+    if (lev(u, a) <= typoTol(a.length)) return 'near';
+    return 'ng';
+  };
+  // 키워드가 사용자 텍스트에 들어있는 정도: 1(포함·오타 허용) / 0.5(대부분) / 0  + 위치
+  const findKw = (kw, text) => {
+    const k = norm(kw), t = norm(text);
+    if (!k) return { v: 1, exact: true, pos: -1 };
+    if (!t) return { v: 0, pos: -1 };
+    const i = t.indexOf(k);
+    if (i >= 0) return { v: 1, exact: true, pos: i + k.length - 1 };
+    const { d, pos } = fuzzyFind(k, t);
+    if (d <= typoTol(k.length)) return { v: 1, exact: false, pos };
+    if (d <= Math.ceil(k.length * 0.4)) return { v: 0.5, pos };
+    return { v: 0, pos: -1 };
+  };
+  const recall = (kw, text) => findKw(kw, text).v;
+  // 최장 증가 부분수열 길이 (순서 점수)
+  const lisLen = (arr) => { const t = []; arr.forEach((x) => { let lo = 0, hi = t.length; while (lo < hi) { const m = (lo + hi) >> 1; if (t[m] < x) lo = m + 1; else hi = m; } t[lo] = x; }); return t.length; };
   const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
   const chosung = (s) => [...s].map((c) => { const code = c.charCodeAt(0) - 0xac00; return code >= 0 && code < 11172 ? CHO[Math.floor(code / 588)] : c; }).join('');
   const fmtTime = (sec) => `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
@@ -438,10 +478,33 @@
   routes.wrong.tab = 'cbrn';
 
   // ---------- 정신전력 메인 ----------
+  // 흐름(역할 라벨) · 연결어 · 키워드 렌더링 공통
+  const CONN = /(이러한 측면에서|이는 결국|대표적 예로|세부적으로|따라서|결국|더불어|아울러|또한|하지만|이제|흔히|이후)/g;
+  const roleOf = (sec, k) => (sec.flow && sec.flow[k]) || { r: '', cue: '' };
+  const roleTag = (sec, k) => (roleOf(sec, k).r ? `<span class="role">${esc(roleOf(sec, k).r)}</span>` : '');
+  const sentHtml = (it, { hide = false, conn = true, miss = null } = {}) => parse(it).map((t) => {
+    if (t.kw) return `<mark class="kw ${hide ? 'hid' : ''} ${miss && miss.has(t.s) ? 'miss' : ''}">${esc(t.s)}</mark>`;
+    const e = esc(t.s);
+    return conn ? e.replace(CONN, '<b class="conn">$1</b>') : e;
+  }).join('');
+  const storyHtml = (q) => q.story ? `<div class="story">${q.story.split('‖').map((part) => `<div class="story-line">${part.split('→').map((x) => `<span>${esc(x.trim())}</span>`).join('<i>→</i>')}</div>`).join('')}</div>` : '';
+  // LIS 인덱스 (순서가 맞는 항목들)
+  const lisIdx = (arr) => {
+    const n = arr.length, len = Array(n).fill(1), prev = Array(n).fill(-1);
+    let best = -1;
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < i; j++) if (arr[j] < arr[i] && len[j] + 1 > len[i]) { len[i] = len[j] + 1; prev[i] = j; }
+      if (best < 0 || len[i] > len[best]) best = i;
+    }
+    const out = new Set();
+    for (let i = best; i >= 0; i = prev[i]) out.add(i);
+    return out;
+  };
+
   routes.mind = () => {
     setHeader('정신전력', false);
     app.innerHTML = `
-      <div class="tip">💡 <b>백지암기 루틴</b> — 읽기 → 첫 글자 → 빈칸 Lv1~3 → 백지 쓰기. 청색 핵심키워드가 채점 기준이에요.</div>
+      <div class="tip">💡 <b>맥락 암기 루틴</b> — 흐름 잡기 → 읽기 → 문장 순서 → 첫 글자 → 빈칸 → 백지 쓰기. 문장마다 <b>역할</b>(개념→위협→결론…)을 먼저 잡으면 백지에서 다음 문장이 저절로 떠올라요.</div>
       ${['A안', 'B안'].map((set) => `
         <h2 class="sec-title">${set}</h2>
         <div class="list">${MIND.filter((q) => q.set === set).map((q) => {
@@ -463,13 +526,18 @@
     const kws = keywordsOf(q);
     app.innerHTML = `
       <div class="q-head"><span class="badge-id lg">${q.id}</span><h2>${esc(q.title)}</h2><p>핵심키워드 ${kws.length}개 · 최고 ${r.best || 0}점</p></div>
-      <div class="steps">
-        <a class="step" href="#read/${id}"><i>1</i><div><b>읽기</b><small>키워드 하이라이트로 전체 읽기</small></div></a>
-        <a class="step" href="#initial/${id}"><i>2</i><div><b>첫 글자 암기</b><small>어절 첫 글자만 보고 떠올리기</small></div></a>
-        <a class="step" href="#cloze/${id}/1"><i>3</i><div><b>빈칸 Lv1</b><small>키워드 빈칸 + 초성 힌트</small></div></a>
-        <a class="step" href="#cloze/${id}/2"><i>4</i><div><b>빈칸 Lv2</b><small>키워드 빈칸 (힌트 없음)</small></div></a>
-        <a class="step" href="#cloze/${id}/3"><i>5</i><div><b>빈칸 Lv3</b><small>키워드 + 일반 어절 절반 빈칸</small></div></a>
-        <a class="step final" href="#write/${id}"><i>✍</i><div><b>백지 쓰기 (실전)</b><small>통째로 써보고 자동 채점</small></div></a>
+      <h2 class="sec-title" style="margin-top:4px">🧭 이 문항의 흐름</h2>
+      ${storyHtml(q)}
+      <div class="steps" style="margin-top:14px">
+        <a class="step" href="#flow/${id}"><i>1</i><div><b>흐름 잡기</b><small>문장별 역할 · 유도 질문으로 떠올리기</small></div></a>
+        <a class="step" href="#read/${id}"><i>2</i><div><b>읽기</b><small>역할 라벨 · 연결어 · 키워드 하이라이트</small></div></a>
+        <a class="step" href="#sorder/${id}"><i>3</i><div><b>문장 순서 맞추기</b><small>논리 순서대로 문장 배열</small></div></a>
+        <a class="step" href="#initial/${id}"><i>4</i><div><b>첫 글자 암기</b><small>어절 첫 글자만 보고 떠올리기</small></div></a>
+        <a class="step" href="#cloze/${id}/1"><i>5</i><div><b>빈칸 Lv1</b><small>키워드 빈칸 + 초성 힌트</small></div></a>
+        <a class="step" href="#cloze/${id}/2"><i>6</i><div><b>빈칸 Lv2</b><small>키워드 빈칸 (힌트 없음)</small></div></a>
+        <a class="step" href="#cloze/${id}/3"><i>7</i><div><b>빈칸 Lv3</b><small>키워드 + 일반 어절 절반 빈칸</small></div></a>
+        <a class="step" href="#write/${id}/hint"><i>8</i><div><b>백지 쓰기 · 흐름 힌트</b><small>문장별 칸에 역할 라벨을 보고 쓰기</small></div></a>
+        <a class="step final" href="#write/${id}"><i>✍</i><div><b>백지 쓰기 (실전)</b><small>통째로 쓰기 · 키워드+일치도+흐름 채점</small></div></a>
       </div>
       <h2 class="sec-title">우리의 자세 (개인 각오 메모)</h2>
       <textarea class="memo" id="memo" placeholder="직책과 연계한 개인 각오 · 경험/사례를 적어두세요. (자동 저장, 개인 경험·사례 작성 시 가점)">${esc(S.memo[id] || '')}</textarea>
@@ -478,23 +546,111 @@
   };
   routes.mq.tab = 'mind';
 
+  // 흐름 잡기: 역할 + 유도 질문 → 문장 떠올리기
+  routes.flow = (id) => {
+    const q = MIND.find((x) => x.id === id);
+    if (!q) return go('mind');
+    setHeader(q.id + ' 흐름 잡기', '#mq/' + id);
+    const total = q.sections.reduce((a, s) => a + s.items.length, 0);
+    const marks = {};
+    app.innerHTML = `
+      <div class="tip">각 문장의 <b>역할</b>과 <b>유도 질문</b>을 보고, 해당 문장을 소리 내어 말해보세요. 탭하면 정답이 나오고 ○/✕로 체크해요.</div>
+      ${storyHtml(q)}
+      <div class="toolbar" style="margin-top:12px"><button class="pill ghost" id="openall">전체 펼치기</button></div>
+      ${q.sections.map((sec, si) => `
+        <h2 class="sec-title">${esc(sec.h)}</h2>
+        <div class="timeline">${sec.items.map((it, k) => `
+          <div class="node" data-key="${si}-${k}">
+            <div class="node-dot">${NUM[k]}</div>
+            <div class="node-body">
+              <div class="node-role">${esc(roleOf(sec, k).r)}</div>
+              <p class="node-cue">${esc(roleOf(sec, k).cue)}</p>
+              <div class="node-ans" hidden><p>${sentHtml(it)}</p>
+                <div class="node-mark"><button class="mk ng" data-v="0">✕ 몰랐음</button><button class="mk ok" data-v="1">○ 떠올림</button></div></div>
+              <button class="node-open">탭해서 정답 보기</button>
+            </div>
+          </div>`).join('')}</div>`).join('')}
+      <div id="fres"></div>`;
+    const open = (node) => { $('.node-ans', node).hidden = false; const b = $('.node-open', node); if (b) b.remove(); };
+    $$('.node').forEach((node) => {
+      $('.node-open', node).onclick = () => open(node);
+      $$('.mk', node).forEach((b) => { b.onclick = () => {
+        marks[node.dataset.key] = +b.dataset.v;
+        node.classList.remove('good', 'bad'); node.classList.add(+b.dataset.v ? 'good' : 'bad');
+        const n = Object.keys(marks).length;
+        if (n === total) {
+          const sc = Math.round((Object.values(marks).reduce((a, v) => a + v, 0) / total) * 100);
+          logHistory('흐름 잡기', q.id, sc);
+          $('#fres').innerHTML = `<div class="feedback ${sc >= 80 ? 'good' : 'bad'}"><b>${sc}점 · ${total}문장 중 ${Object.values(marks).filter(Boolean).length}개 떠올림</b></div>
+            <div class="btn-row"><button class="btn ghost" id="redo">다시</button><a class="btn" href="#sorder/${id}">다음: 문장 순서 →</a></div>`;
+          $('#redo').onclick = render;
+          $('#fres').scrollIntoView({ behavior: 'smooth' });
+        }
+      }; });
+    });
+    $('#openall').onclick = () => $$('.node').forEach(open);
+  };
+  routes.flow.tab = 'mind';
+
   // 읽기
   routes.read = (id) => {
     const q = MIND.find((x) => x.id === id);
     setHeader(q.id + ' 읽기', '#mq/' + id);
-    let hide = false;
+    let hide = false, roles = true;
     const draw = () => {
       app.innerHTML = `
-        <div class="toolbar"><label class="sw"><input type="checkbox" id="hide" ${hide ? 'checked' : ''}><span></span>키워드 가리기</label></div>
-        <div class="doc">${q.sections.map((sec) => `<h3>${esc(sec.h)}</h3>${sec.items.map((it, k) => `<p><i class="num">${NUM[k]}</i>${parse(it).map((t) => (t.kw ? `<mark class="kw ${hide ? 'hid' : ''}">${esc(t.s)}</mark>` : esc(t.s))).join('')}</p>`).join('')}`).join('')}
+        <div class="toolbar">
+          <label class="sw"><input type="checkbox" id="roles" ${roles ? 'checked' : ''}><span></span>역할 보기</label>
+          <label class="sw"><input type="checkbox" id="hide" ${hide ? 'checked' : ''}><span></span>키워드 가리기</label>
+        </div>
+        <div class="doc">${q.sections.map((sec) => `<h3>${esc(sec.h)}</h3>${sec.items.map((it, k) => `<p>${roles ? roleTag(sec, k) : ''}<i class="num">${NUM[k]}</i>${sentHtml(it, { hide })}</p>`).join('')}`).join('')}
         <h3>${q.id.startsWith('B-2') ? '마' : '다'}. 우리의 자세</h3><p class="muted">${esc(S.memo[id] || '직책과 연계하여 개인의 각오 작성 (메모 탭에서 작성)')}</p></div>
-        <a class="btn block" href="#initial/${id}">다음: 첫 글자 암기 →</a>`;
+        <p class="hint"><b class="conn">굵은 글씨</b> = 문장을 잇는 연결어 · 흐름을 붙잡는 고리예요</p>
+        <a class="btn block" href="#sorder/${id}">다음: 문장 순서 맞추기 →</a>`;
       $('#hide').onchange = (e) => { hide = e.target.checked; draw(); };
+      $('#roles').onchange = (e) => { roles = e.target.checked; draw(); };
       $$('.kw').forEach((m) => { m.onclick = () => m.classList.toggle('hid'); });
     };
     draw();
   };
   routes.read.tab = 'mind';
+
+  // 문장 순서 맞추기
+  routes.sorder = (id) => {
+    const q = MIND.find((x) => x.id === id);
+    if (!q) return go('mind');
+    setHeader(q.id + ' 문장 순서', '#mq/' + id);
+    const secs = q.sections.map((sec, si) => ({ sec, si })).filter((x) => x.sec.items.length >= 2);
+    let miss = 0, placed = 0;
+    const total = secs.reduce((a, x) => a + x.sec.items.length, 0);
+    app.innerHTML = `
+      <div class="tip">각 단락의 문장을 <b>논리 순서대로</b> 탭하세요. 맞히면 그 문장의 역할이 나타나요.</div>
+      ${secs.map(({ sec, si }) => `
+        <h2 class="sec-title">${esc(sec.h)}</h2>
+        <div class="ord-done" id="d${si}"></div>
+        <div class="ord-pool" data-si="${si}" data-next="0">${shuffle(sec.items.map((it, k) => ({ it, k }))).map(({ it, k }) => `<button class="ord sent" data-k="${k}">${sentHtml(it, { conn: false })}</button>`).join('')}</div>`).join('')}
+      <div id="ores"></div>`;
+    $$('.ord-pool').forEach((pool) => {
+      const si = +pool.dataset.si, sec = q.sections[si];
+      $$('.ord', pool).forEach((b) => { b.onclick = () => {
+        const next = +pool.dataset.next;
+        if (+b.dataset.k !== next) { miss++; vibrate(60); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); return; }
+        pool.dataset.next = next + 1; placed++;
+        b.remove();
+        $('#d' + si).insertAdjacentHTML('beforeend', `<div class="ord ok sent"><i>${NUM[next]}</i><div>${roleTag(sec, next)}<div>${sentHtml(sec.items[next])}</div></div></div>`);
+        if (placed === total) {
+          const sc = Math.max(0, Math.round(((total - miss) / total) * 100));
+          logHistory('문장 순서', q.id, sc);
+          $('#ores').innerHTML = `<div class="feedback ${miss ? 'bad' : 'good'}"><b>${sc}점 · 실수 ${miss}번</b></div>
+            <div class="btn-row"><button class="btn ghost" id="redo">다시</button><a class="btn" href="#initial/${id}">다음: 첫 글자 →</a></div>`;
+          $('#redo').onclick = render;
+          $('#ores').scrollIntoView({ behavior: 'smooth' });
+          if (!miss) confetti();
+        }
+      }; });
+    });
+  };
+  routes.sorder.tab = 'mind';
 
   // 첫 글자
   routes.initial = (id) => {
@@ -508,9 +664,9 @@
       return `<span class="iw ${kw ? 'k' : ''}" data-full="${esc(w)}" data-short="${esc(first + rest)}">${esc(first + rest)}</span>`;
     };
     app.innerHTML = `
-      <div class="tip">각 어절의 <b>첫 글자</b>만 보고 소리 내어 문장을 완성해 보세요. 어절을 탭하면 정답이 보여요.</div>
+      <div class="tip">문장의 <b>역할</b>을 먼저 떠올리고, 어절 <b>첫 글자</b>만 보고 소리 내어 문장을 완성해 보세요. 어절을 탭하면 정답이 보여요.</div>
       <div class="toolbar"><button class="pill" id="showall">전체 보기</button><button class="pill ghost" id="hideall">전체 가리기</button></div>
-      <div class="doc initial">${q.sections.map((sec) => `<h3>${esc(sec.h)}</h3>${sec.items.map((it, k) => `<p><i class="num">${NUM[k]}</i>${parse(it).map((t) => t.s.split(/(\s+)/).map((w) => wordHtml(w, t.kw)).join('')).join('')}</p>`).join('')}`).join('')}</div>
+      <div class="doc initial">${q.sections.map((sec) => `<h3>${esc(sec.h)}</h3>${sec.items.map((it, k) => `<p>${roleTag(sec, k)}<i class="num">${NUM[k]}</i>${parse(it).map((t) => t.s.split(/(\s+)/).map((w) => wordHtml(w, t.kw)).join('')).join('')}</p>`).join('')}`).join('')}</div>
       <a class="btn block" href="#cloze/${id}/1">다음: 빈칸 Lv1 →</a>`;
     $$('.iw').forEach((s) => { s.onclick = () => { const open = s.classList.toggle('open'); s.textContent = open ? s.dataset.full : s.dataset.short; }; });
     $('#showall').onclick = () => $$('.iw').forEach((s) => { s.classList.add('open'); s.textContent = s.dataset.full; });
@@ -531,7 +687,7 @@
       const ph = hintOn ? chosung(ans) : '';
       return `<input class="blank" data-i="${idx}" style="width:${w * 1.05}em" placeholder="${esc(ph)}" autocomplete="off" autocapitalize="off" spellcheck="false">`;
     };
-    const body = q.sections.map((sec) => `<h3>${esc(sec.h)}</h3>${sec.items.map((it, k) => `<p><i class="num">${NUM[k]}</i>${parse(it).map((t) => {
+    const body = q.sections.map((sec) => `<h3>${esc(sec.h)}</h3>${sec.items.map((it, k) => `<p>${roleTag(sec, k)}<i class="num">${NUM[k]}</i>${parse(it).map((t) => {
       if (t.kw) return blankHtml(t.s, lv === 1);
       if (lv < 3) return esc(t.s);
       return t.s.split(/(\s+)/).map((w) => {
@@ -544,100 +700,144 @@
     app.innerHTML = `
       <div class="lv-tabs">${[1, 2, 3].map((n) => `<a href="#cloze/${id}/${n}" class="${n === lv ? 'on' : ''}">Lv${n}</a>`).join('')}</div>
       <div class="doc cloze">${body}</div>
+      <p class="hint">띄어쓰기·문장부호는 무시하고, 짧은 오타나 조사 차이는 정답(≈)으로 인정해요.</p>
       <div class="sticky-act"><button class="btn ghost" id="peek">정답 보기</button><button class="btn" id="check">채점하기</button></div>
       <div id="cres"></div>`;
     const inputs = $$('.blank');
     inputs.forEach((inp, k) => {
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); (inputs[k + 1] || $('#check')).focus(); } });
     });
-    $('#peek').onclick = () => inputs.forEach((inp) => { if (!inp.classList.contains('ok')) { inp.value = blanks[inp.dataset.i]; inp.classList.add('peeked'); } });
+    $('#peek').onclick = () => inputs.forEach((inp) => { if (!inp.classList.contains('ok') && !inp.classList.contains('near')) { inp.value = blanks[inp.dataset.i]; inp.classList.add('peeked'); } });
     $('#check').onclick = () => {
-      let ok = 0;
+      let ok = 0, near = 0;
+      const wrong = [];
       inputs.forEach((inp) => {
         const ans = blanks[inp.dataset.i];
-        const good = norm(inp.value) === norm(ans) || (norm(ans).length >= 4 && dice(inp.value, ans) >= 0.85);
-        inp.classList.remove('ok', 'ng');
-        inp.classList.add(good && !inp.classList.contains('peeked') ? 'ok' : 'ng');
-        if (good && !inp.classList.contains('peeked')) ok++;
-        else inp.title = ans;
+        const peeked = inp.classList.contains('peeked');
+        const j = peeked ? 'ng' : judge(inp.value, ans);
+        inp.classList.remove('ok', 'near', 'ng');
+        inp.classList.add(j === 'exact' ? 'ok' : j === 'near' ? 'near' : 'ng');
+        inp.title = j === 'exact' ? '' : ans;
+        if (j === 'exact') ok++;
+        else if (j === 'near') { ok++; near++; }
+        else if (!peeked) wrong.push({ ans, val: inp.value });
       });
       const sc = Math.round((ok / inputs.length) * 100);
       logHistory(`빈칸 Lv${lv}`, q.id, sc);
-      $('#cres').innerHTML = `<div class="feedback ${sc >= 80 ? 'good' : 'bad'}"><b>${sc}점 (${ok}/${inputs.length})</b><span>틀린 칸을 길게 누르거나 '정답 보기'로 확인하세요.</span></div>
-        <div class="btn-row">${lv < 3 ? `<a class="btn" href="#cloze/${id}/${lv + 1}">Lv${lv + 1} 도전 →</a>` : `<a class="btn" href="#write/${id}">백지 쓰기 도전 →</a>`}<button class="btn ghost" id="redo">다시</button></div>`;
+      $('#cres').innerHTML = `<div class="feedback ${sc >= 80 ? 'good' : 'bad'}"><b>${sc}점 (${ok}/${inputs.length})${near ? ` · 오타/조사 허용 ${near}개` : ''}</b>
+          <span>노란 칸(≈)은 정답 처리됐지만 표기가 조금 달라요. 길게 누르면 정답이 보여요.</span></div>
+        ${wrong.length ? `<div class="panel"><h3>틀린 빈칸</h3>${wrong.map((w) => `<div class="wrong-row"><span class="ng-t">${esc(w.val) || '(빈칸)'}</span><i>→</i><b>${esc(w.ans)}</b></div>`).join('')}</div>` : ''}
+        <div class="btn-row">${lv < 3 ? `<a class="btn" href="#cloze/${id}/${lv + 1}">Lv${lv + 1} 도전 →</a>` : `<a class="btn" href="#write/${id}/hint">백지 쓰기 도전 →</a>`}<button class="btn ghost" id="redo">다시</button></div>`;
       $('#redo').onclick = render;
       $('#cres').scrollIntoView({ behavior: 'smooth' });
     };
   };
   routes.cloze.tab = 'mind';
 
-  // 백지 쓰기
-  routes.write = (id) => {
+  // 백지 쓰기 — mode: 'hint'(문장별 칸 + 역할 라벨) | 실전(단락 통째)
+  const gradeMind = (q, getText, hint) => {
+    let kwTotal = 0, kwGot = 0, simSum = 0, simN = 0, flowSum = 0, itemN = 0;
+    const secRes = q.sections.map((sec, si) => {
+      const secText = hint ? sec.items.map((_, k) => getText(si, k)).join(' ') : getText(si);
+      const items = sec.items.map((it, k) => {
+        const text = hint ? getText(si, k) : secText;
+        const kr = parse(it).filter((t) => t.kw).map((t) => { const f = findKw(t.s, text); return { k: t.s, v: f.v, exact: f.exact, pos: f.pos }; });
+        // 문장 위치(흐름 판단용): 찾은 키워드 위치, 없으면 문장 앞부분으로 근사 검색
+        let pos = -1;
+        const hit = kr.filter((x) => x.v > 0).sort((a, b) => b.v - a.v)[0];
+        if (hit) pos = hit.pos;
+        else {
+          const head = norm(plain(it)).slice(0, 10);
+          const f = fuzzyFind(head, norm(secText));
+          if (f.d <= 3) pos = f.pos;
+        }
+        const sim = hint ? dice(text, plain(it)) : null;
+        return { it, k, text, kr, pos, sim };
+      });
+      items.forEach((x) => { kwTotal += x.kr.length; kwGot += x.kr.reduce((a, y) => a + y.v, 0); });
+      if (hint) items.forEach((x) => { simSum += x.sim; simN++; });
+      else { simSum += dice(secText, sec.items.map(plain).join(' ')); simN++; }
+      // 흐름: 찾은 문장들이 원래 순서대로 쓰였는가
+      const found = items.filter((x) => x.pos >= 0);
+      const inOrder = hint ? new Set(found.map((x) => x.k)) : (() => { const s = lisIdx(found.map((x) => x.pos)); return new Set(found.filter((_, i) => s.has(i)).map((x) => x.k)); })();
+      items.forEach((x) => { x.state = x.pos < 0 ? 'none' : inOrder.has(x.k) ? 'ok' : 'swap'; });
+      flowSum += inOrder.size; itemN += items.length;
+      return { sec, si, secText, items };
+    });
+    const kwRate = kwTotal ? kwGot / kwTotal : 0;
+    const simRate = Math.min(1, (simSum / simN) * 1.15);
+    const flowRate = itemN ? flowSum / itemN : 0;
+    const sc = Math.round(kwRate * 60 + simRate * 25 + flowRate * 15);
+    return { sc, kwRate, simRate, flowRate, secRes };
+  };
+
+  routes.write = (id, mode) => {
     const q = MIND.find((x) => x.id === id);
     if (!q) return go('mind');
-    setHeader(q.id + ' 백지 쓰기', '#mq/' + id);
-    const draftKey = 'draft-' + id;
+    const hint = mode === 'hint';
+    setHeader(q.id + (hint ? ' 백지 · 흐름 힌트' : ' 백지 쓰기'), '#mq/' + id);
+    const draftKey = 'draft-' + id + (hint ? '-h' : '');
     const draft = S.memo[draftKey] || {};
     const t0 = Date.now();
     app.innerHTML = `
+      <div class="lv-tabs"><a href="#write/${id}/hint" class="${hint ? 'on' : ''}">흐름 힌트</a><a href="#write/${id}" class="${hint ? '' : 'on'}">실전</a></div>
       <div class="paper">
         <div class="paper-head"><span>'26 전투력 측정 [정신전력]</span><span class="timer" id="tm">00:00</span></div>
         <h2 class="paper-q">${q.id}. ${esc(q.title)}</h2>
         ${q.sections.map((sec, si) => `
           <h3>${esc(sec.h)}</h3>
-          <textarea class="sheet" data-si="${si}" rows="${Math.max(4, sec.items.length * 3)}" placeholder="① ...">${esc(draft[si] || '')}</textarea>`).join('')}
+          ${hint ? sec.items.map((_, k) => `
+            <div class="hint-box"><div class="hint-lbl"><i>${NUM[k]}</i>${esc(roleOf(sec, k).r)}</div>
+            <textarea class="sheet sm" data-key="${si}-${k}" rows="3" placeholder="${esc(roleOf(sec, k).cue)}">${esc(draft[si + '-' + k] || '')}</textarea></div>`).join('')
+            : `<textarea class="sheet" data-key="${si}" rows="${Math.max(4, sec.items.length * 3)}" placeholder="① ...">${esc(draft[si] || '')}</textarea>`}`).join('')}
       </div>
+      <p class="hint">채점: 핵심키워드 60% + 문장 일치도 25% + 흐름(문장 순서) 15% · 띄어쓰기·문장부호 무시, 짧은 오타·조사 차이 허용</p>
       <div class="sticky-act"><button class="btn ghost" id="clear">지우기</button><button class="btn" id="grade">제출 · 채점</button></div>
       <div id="wres"></div>`;
     const timer = setInterval(() => { const el = $('#tm'); if (el) el.textContent = fmtTime(Math.floor((Date.now() - t0) / 1000)); }, 500);
     cleanup = () => clearInterval(timer);
-    $$('.sheet').forEach((ta) => { ta.oninput = () => { draft[ta.dataset.si] = ta.value; S.memo[draftKey] = draft; save(); }; });
+    $$('.sheet').forEach((ta) => { ta.oninput = () => { draft[ta.dataset.key] = ta.value; S.memo[draftKey] = draft; save(); }; });
     $('#clear').onclick = () => { if (confirm('작성한 내용을 모두 지울까요?')) { S.memo[draftKey] = {}; save(); render(); } };
     $('#grade').onclick = () => {
       const elapsed = Math.floor((Date.now() - t0) / 1000);
-      let kwTotal = 0, kwGot = 0, simSum = 0;
-      const secRes = q.sections.map((sec, si) => {
-        const text = $(`.sheet[data-si="${si}"]`).value;
-        const ref = sec.items.map(plain).join(' ');
-        const kws = sec.items.flatMap((it) => parse(it).filter((t) => t.kw).map((t) => t.s));
-        const kr = kws.map((k) => { const r = recall(k, text); const v = r === 1 ? 1 : r >= 0.75 ? 0.5 : 0; return { k, v }; });
-        kwTotal += kr.length; kwGot += kr.reduce((a, x) => a + x.v, 0);
-        const sim = dice(text, ref);
-        simSum += sim;
-        return { sec, text, kr, sim };
-      });
-      const kwRate = kwTotal ? kwGot / kwTotal : 0;
-      const simRate = simSum / q.sections.length;
-      const sc = Math.round(kwRate * 70 + Math.min(1, simRate * 1.15) * 30);
+      const val = (key) => { const el = $(`.sheet[data-key="${key}"]`); return el ? el.value : ''; };
+      const g = gradeMind(q, (si, k) => (hint ? val(si + '-' + k) : val(si)), hint);
+      const { sc } = g;
       const r = S.mind[q.id] || { best: 0, tries: 0 };
-      const isBest = sc > r.best;
-      r.best = Math.max(r.best, sc); r.tries++; r.last = sc;
-      S.mind[q.id] = r;
-      logHistory('백지 쓰기', q.id, sc);
+      let isBest = false;
+      if (!hint) { isBest = sc > r.best; r.best = Math.max(r.best, sc); r.tries++; r.last = sc; S.mind[q.id] = r; }
+      logHistory(hint ? '백지 쓰기 (힌트)' : '백지 쓰기', q.id, sc);
       clearInterval(timer);
+      const chip = (x) => `<span class="chip ${x.v === 1 ? (x.exact ? 'ok' : 'okn') : x.v ? 'half' : 'ng'}">${x.v === 1 ? (x.exact ? '✓' : '≈') : x.v ? '△' : '✕'} ${esc(x.k)}</span>`;
+      const stLbl = { ok: '✓', swap: '↕', none: '✕' };
       $('#wres').innerHTML = `
-        ${result(sc, `${isBest ? '🏆 최고 기록! · ' : ''}소요 ${fmtTime(elapsed)}`, [])}
-        <div class="score-break">
-          <div><b>${Math.round(kwRate * 100)}%</b><span>핵심키워드 (70%)</span></div>
-          <div><b>${Math.round(Math.min(1, simRate * 1.15) * 100)}%</b><span>문장 일치도 (30%)</span></div>
+        ${result(sc, `${hint ? '흐름 힌트 모드 (최고 기록 미반영) · ' : isBest ? '🏆 최고 기록! · ' : ''}소요 ${fmtTime(elapsed)}`, [])}
+        <div class="score-break three">
+          <div><b>${Math.round(g.kwRate * 100)}%</b><span>핵심키워드<br>60%</span></div>
+          <div><b>${Math.round(g.simRate * 100)}%</b><span>문장 일치도<br>25%</span></div>
+          <div><b>${Math.round(g.flowRate * 100)}%</b><span>흐름<br>15%</span></div>
         </div>
-        ${secRes.map((s) => `
+        ${g.secRes.map((s) => `
           <div class="panel">
             <h3>${esc(s.sec.h)}</h3>
-            <div class="kw-chips">${s.kr.map((x) => `<span class="chip ${x.v === 1 ? 'ok' : x.v ? 'half' : 'ng'}">${x.v === 1 ? '✓' : x.v ? '△' : '✕'} ${esc(x.k)}</span>`).join('')}</div>
+            <div class="flow-chk">${s.items.map((x) => `<span class="fc-${x.state}" title="${x.state === 'swap' ? '순서가 바뀜' : x.state === 'none' ? '빠짐' : '순서 맞음'}">${stLbl[x.state]} ${esc(roleOf(s.sec, x.k).r || NUM[x.k])}</span>`).join('<i>→</i>')}</div>
+            <div class="kw-chips">${s.items.flatMap((x) => x.kr).map(chip).join('')}</div>
             <details><summary>모범답안과 비교</summary>
-              <div class="cmp"><div><small>내 답안</small><p>${esc(s.text) || '<span class="muted">(미작성)</span>'}</p></div>
-              <div><small>모범답안</small>${s.sec.items.map((it, k) => `<p><i class="num">${NUM[k]}</i>${parse(it).map((t) => (t.kw ? `<mark class="kw ${s.kr.find((x) => x.k === t.s && x.v === 1) ? '' : 'miss'}">${esc(t.s)}</mark>` : esc(t.s))).join('')}</p>`).join('')}</div></div>
+              <div class="cmp">
+                ${hint ? s.items.map((x) => `<div class="cmp-item">${roleTag(s.sec, x.k)}<p class="mine">${esc(x.text) || '<span class="muted">(미작성)</span>'}</p><p class="model"><i class="num">${NUM[x.k]}</i>${sentHtml(x.it, { conn: false, miss: new Set(x.kr.filter((y) => y.v < 1).map((y) => y.k)) })}</p></div>`).join('')
+                  : `<div><small>내 답안</small><p>${esc(s.secText) || '<span class="muted">(미작성)</span>'}</p></div>
+                     <div><small>모범답안</small>${s.items.map((x) => `<p>${roleTag(s.sec, x.k)}<i class="num">${NUM[x.k]}</i>${sentHtml(x.it, { conn: false, miss: new Set(x.kr.filter((y) => y.v < 1).map((y) => y.k)) })}</p>`).join('')}</div>`}
+              </div>
             </details>
           </div>`).join('')}
-        <div class="btn-row"><button class="btn" id="again">새로 쓰기</button><a class="btn ghost" href="#cloze/${id}/2">빈칸 연습</a></div>`;
+        <p class="hint">✓ 정확 · ≈ 오타/조사 차이 허용(정답 처리) · △ 일부만 · ✕ 없음 &nbsp;|&nbsp; 흐름 ↕ = 순서 바뀜</p>
+        <div class="btn-row"><button class="btn" id="again">새로 쓰기</button>${hint ? `<a class="btn ghost" href="#write/${id}">실전 도전</a>` : `<a class="btn ghost" href="#flow/${id}">흐름 복습</a>`}</div>`;
       $('#again').onclick = () => { S.memo[draftKey] = {}; save(); render(); };
       $('#wres').scrollIntoView({ behavior: 'smooth' });
       if (isBest && sc >= 80) confetti();
     };
   };
   routes.write.tab = 'mind';
-
 
   // ---------- TCCC ----------
   const grp = (id) => TCCC_GROUPS.find((g) => g.id === id);

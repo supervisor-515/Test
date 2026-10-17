@@ -430,3 +430,52 @@ summary { cursor: pointer; font-weight: 700; color: var(--primary); font-size: 1
 .hero { flex-direction: column; align-items: stretch; }
 .hero .rings { justify-content: space-around; margin-top: 4px; }
 
+
+/* 정신전력 흐름 */
+.story { background: var(--card); border-radius: var(--r); padding: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; }
+.story-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 4px; }
+.story-line + .story-line { border-top: 1px dashed var(--line); padding-top: 10px; }
+.story-line span { background: var(--primary-l); color: var(--primary); font-size: 13px; font-weight: 700; padding: 4px 9px; border-radius: 8px; word-break: keep-all; }
+.story-line i { font-style: normal; color: var(--sub); font-size: 12px; }
+.role { display: inline-block; font-size: 11px; font-weight: 800; color: #7a4cff; background: #f1ebff; border-radius: 6px; padding: 1px 7px; margin-right: 6px; vertical-align: 2px; line-height: 1.6; white-space: nowrap; }
+@media (prefers-color-scheme: dark) { .role { background: #34295a; color: #c4b0ff; } }
+b.conn { color: var(--text); font-weight: 800; text-decoration: underline; text-decoration-color: var(--yellow); text-decoration-thickness: 3px; text-underline-offset: 2px; }
+.timeline { position: relative; padding-left: 4px; }
+.node { position: relative; display: flex; gap: 12px; padding-bottom: 14px; }
+.node:not(:last-child)::before { content: ""; position: absolute; left: 15px; top: 32px; bottom: 0; width: 2px; background: var(--line); }
+.node-dot { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--card); border: 2px solid var(--primary); color: var(--primary); display: grid; place-items: center; font-weight: 800; z-index: 1; }
+.node.good .node-dot { background: var(--green); border-color: var(--green); color: #fff; }
+.node.bad .node-dot { background: var(--red); border-color: var(--red); color: #fff; }
+.node-body { flex: 1; min-width: 0; background: var(--card); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow); }
+.node-role { font-size: 12px; font-weight: 800; color: #7a4cff; }
+.node-cue { margin: 2px 0 0; font-weight: 700; font-size: 15px; word-break: keep-all; }
+.node-open { margin-top: 10px; width: 100%; border: 2px dashed var(--line); background: none; border-radius: 10px; padding: 10px; color: var(--sub); font-weight: 600; font-size: 13px; }
+.node-ans { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; animation: fade .25s; }
+.node-ans p { margin: 0; line-height: 1.8; word-break: keep-all; }
+.node-mark { display: flex; gap: 8px; margin-top: 10px; }
+.mk { flex: 1; border-radius: 10px; border: 2px solid; background: var(--card); padding: 8px; font-weight: 800; font-size: 13px; }
+.mk.ok { border-color: var(--green); color: var(--green); }
+.mk.ng { border-color: var(--red); color: var(--red); }
+.ord.sent { line-height: 1.7; word-break: keep-all; display: block; }
+.ord.ok.sent { display: flex; align-items: flex-start; }
+.ord.ok.sent i { margin-top: 3px; }
+.blank.near { background: var(--yellow-l); border-color: var(--yellow); color: #a06d00; }
+.wrong-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; flex-wrap: wrap; }
+.wrong-row:first-of-type { border-top: 0; }
+.wrong-row i { font-style: normal; color: var(--sub); }
+.ng-t { color: var(--red); text-decoration: line-through; }
+.hint-box { margin-bottom: 10px; }
+.hint-lbl { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: #7a4cff; margin-bottom: 4px; }
+.hint-lbl i { font-style: normal; color: var(--primary); font-size: 14px; }
+.sheet.sm { min-height: 0; }
+.score-break.three { grid-template-columns: repeat(3, 1fr); }
+.chip.okn { background: var(--green-l); color: var(--green); outline: 1.5px dashed var(--yellow); }
+.flow-chk { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 10px; font-size: 12px; font-weight: 700; }
+.flow-chk i { font-style: normal; color: var(--sub); }
+.flow-chk span { padding: 3px 8px; border-radius: 8px; }
+.fc-ok { background: var(--green-l); color: var(--green); }
+.fc-swap { background: var(--yellow-l); color: #a06d00; }
+.fc-none { background: var(--red-l); color: var(--red); }
+.cmp-item { background: var(--bg); border-radius: 10px; padding: 10px 12px; }
+.cmp-item .mine { margin: 6px 0 4px; color: var(--sub); }
+.cmp-item .model { margin: 0; }
