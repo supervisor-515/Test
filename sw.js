@@ -1,5 +1,5 @@
 // 오프라인 캐시 — 파일을 수정하면 VERSION을 올려주세요.
-const VERSION = 'v4';
+const VERSION = 'v5';
 const CACHE = 'byeonggibon-' + VERSION;
 const ASSETS = [
   './',
@@ -15,7 +15,7 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -26,11 +26,11 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// 네트워크 우선, 실패 시 캐시 (내용 수정이 바로 반영되도록)
+// 네트워크 우선(브라우저 HTTP 캐시 무시), 실패 시 캐시 — 수정 내용이 바로 반영되도록
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET') return;
+  if (e.request.method !== 'GET' || !e.request.url.startsWith(self.location.origin)) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(e.request, copy));
