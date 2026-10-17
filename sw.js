@@ -1,11 +1,12 @@
 // 오프라인 캐시 — 파일을 수정하면 VERSION을 올려주세요.
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = 'byeonggibon-' + VERSION;
 const ASSETS = [
   './',
   './index.html',
   './css/style.css',
   './js/data.js',
+  './js/tccc-data.js',
   './js/app.js',
   './manifest.webmanifest',
   './icons/icon-192.png',

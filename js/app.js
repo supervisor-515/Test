@@ -3,7 +3,7 @@
 
   // ---------- 저장소 ----------
   const KEY = 'hsb.v1';
-  const defaults = () => ({ cards: {}, mind: {}, memo: {}, history: [], wrong: {} });
+  const defaults = () => ({ cards: {}, mind: {}, memo: {}, history: [], wrong: {}, tccc: {}, tcccSay: {} });
   let S;
   try { S = Object.assign(defaults(), JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { S = defaults(); }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
@@ -68,7 +68,12 @@
 
   // 카드 ID
   CBRN.forEach((c, i) => { c.id = c.cat + '-' + i; });
-  const catName = (id) => (CBRN_CATS.find((c) => c.id === id) || {}).name || id;
+  TCCC_CARDS.forEach((c, i) => { c.id = 'tccc-' + i; });
+  const ALL_CARDS = CBRN.concat(TCCC_CARDS);
+  const srcFor = (cat) => (cat === 'tccc' ? TCCC_CARDS : CBRN);
+  const poolFor = (cat) => cat === 'all' ? CBRN : cat === 'tccc' ? TCCC_CARDS : cat === 'wrong' ? CBRN.filter((c) => S.wrong[c.id]) : CBRN.filter((c) => c.cat === cat);
+  const backFor = (cat) => (cat === 'tccc' ? '#tccc' : '#cbrn');
+  const catName = (id) => (id === 'tccc' ? 'TCCC 핵심' : (CBRN_CATS.find((c) => c.id === id) || {}).name || id);
   const cardBox = (id) => (S.cards[id] && S.cards[id].box) || 0; // 0=미학습, 1=모름, 2=애매, 3=암기
   const cbrnMastery = (cards = CBRN) => Math.round((cards.filter((c) => cardBox(c.id) >= 3).length / cards.length) * 100);
 
@@ -88,7 +93,8 @@
     if (cleanup) { cleanup(); cleanup = null; }
     const [name, ...args] = (location.hash.slice(1) || 'home').split('/');
     const fn = routes[name] || routes.home;
-    $$('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === (fn.tab || name)));
+    const tab = typeof fn.tab === 'function' ? fn.tab(...args) : fn.tab;
+    $$('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === (tab || name)));
     document.body.dataset.route = name;
     app.scrollTop = 0; window.scrollTo(0, 0);
     fn(...args.map(decodeURIComponent));
@@ -102,15 +108,17 @@
     const mindAvg = Math.round(mindScores.reduce((a, b) => a + b, 0) / MIND.length);
     const m = cbrnMastery();
     const due = CBRN.filter((c) => cardBox(c.id) < 3).length;
+    const tBest = S.tccc.best || 0;
     app.innerHTML = `
       <section class="hero">
         <div class="hero-txt">
           <p class="eyebrow">2026 전투력 측정 대비</p>
-          <h1>오늘도 한 세트,<br>합격까지.</h1>
+          <h1>오늘도 한 세트, 합격까지.</h1>
         </div>
         <div class="rings">
           ${ring(m, '화생방', 'var(--green)')}
           ${ring(mindAvg, '정신전력', 'var(--primary)')}
+          ${ring(tBest, 'TCCC', 'var(--red)')}
         </div>
       </section>
 
@@ -134,11 +142,23 @@
         <div class="chev">›</div>
       </a>
 
+      <a class="big-card tc" href="#tccc">
+        <div class="bc-icon">🩹</div>
+        <div class="bc-body">
+          <b>TCCC 전투부상자처치</b>
+          <span>평가항목 ${TCCC.length}개 · 최고 ${tBest}%${S.tccc.last != null ? ` · 최근 ${S.tccc.last}%` : ''}</span>
+          <div class="bar"><i style="width:${tBest}%"></i></div>
+        </div>
+        <div class="chev">›</div>
+      </a>
+
       <h2 class="sec-title">빠른 시작</h2>
       <div class="quick">
         <a href="#exam" class="qk"><span>🎤</span>화생방<br>모의 질의응답</a>
         <a href="#quiz/all" class="qk"><span>⚡</span>객관식<br>10문제</a>
         <a href="#flash/all" class="qk"><span>🃏</span>플래시카드<br>전체</a>
+        <a href="#trun" class="qk"><span>⏱️</span>TCCC<br>15분 리허설</a>
+        <a href="#torder" class="qk"><span>🔢</span>TCCC<br>순서 맞추기</a>
         <a href="#write/${encodeURIComponent(MIND[Math.floor(Math.random() * MIND.length)].id)}" class="qk"><span>📝</span>랜덤<br>백지쓰기</a>
       </div>
     `;
@@ -206,9 +226,9 @@
 
   // ---------- 플래시카드 (Quizlet 스타일) ----------
   routes.flash = (cat = 'all') => {
-    const pool = cat === 'all' ? CBRN : cat === 'wrong' ? CBRN.filter((c) => S.wrong[c.id]) : CBRN.filter((c) => c.cat === cat);
-    setHeader(cat === 'all' ? '플래시카드 · 전체' : cat === 'wrong' ? '플래시카드 · 오답' : catName(cat), '#cbrn');
-    if (!pool.length) { app.innerHTML = empty('카드가 없어요', '#cbrn'); return; }
+    const pool = poolFor(cat);
+    setHeader(cat === 'all' ? '플래시카드 · 전체' : cat === 'wrong' ? '플래시카드 · 오답' : catName(cat), backFor(cat));
+    if (!pool.length) { app.innerHTML = empty('카드가 없어요', backFor(cat)); return; }
     // 모르는 카드 먼저
     let deck = shuffle(pool).sort((a, b) => cardBox(a.id) - cardBox(b.id));
     let i = 0, known = 0, unknown = 0, flipped = false;
@@ -271,6 +291,7 @@
       const total = known + unknown;
       const sc = total ? Math.round((known / total) * 100) : 0;
       logHistory('플래시카드', cat === 'all' ? '화생방 전체' : catName(cat), sc);
+      if (cat === 'tccc') S.tccc.cards = sc;
       app.innerHTML = result(sc, `${pool.length}장 완주! 한 번에 맞힌 비율`, [
         `<button class="btn" id="retry">다시 하기</button>`,
         `<a class="btn ghost" href="#quiz/${cat === 'wrong' ? 'all' : cat}">퀴즈로 확인</a>`
@@ -286,16 +307,17 @@
     cleanup = () => document.removeEventListener('keydown', key);
     draw();
   };
-  routes.flash.tab = 'cbrn';
+  routes.flash.tab = (cat) => (cat === 'tccc' ? 'tccc' : 'cbrn');
 
   // ---------- 객관식 퀴즈 ----------
   routes.quiz = (cat = 'all') => {
-    const pool = cat === 'all' ? CBRN : cat === 'wrong' ? CBRN.filter((c) => S.wrong[c.id]) : CBRN.filter((c) => c.cat === cat);
-    setHeader(cat === 'all' ? '객관식 테스트' : cat === 'wrong' ? '오답 테스트' : catName(cat), '#cbrn');
-    if (pool.length < 1) { app.innerHTML = empty('문항이 없어요', '#cbrn'); return; }
+    const pool = poolFor(cat);
+    const SRC = srcFor(cat);
+    setHeader(cat === 'all' ? '객관식 테스트' : cat === 'wrong' ? '오답 테스트' : catName(cat), backFor(cat));
+    if (pool.length < 1) { app.innerHTML = empty('문항이 없어요', backFor(cat)); return; }
     const qs = shuffle(pool).slice(0, 10).map((c) => {
-      const same = CBRN.filter((x) => x.id !== c.id && x.cat === c.cat && x.a !== c.a);
-      const other = CBRN.filter((x) => x.id !== c.id && x.cat !== c.cat && x.a !== c.a);
+      const same = SRC.filter((x) => x.id !== c.id && x.cat === c.cat && x.a !== c.a);
+      const other = SRC.filter((x) => x.id !== c.id && x.cat !== c.cat && x.a !== c.a);
       const distract = [...new Set(shuffle(same).concat(shuffle(other)).map((x) => x.a))].slice(0, 3);
       return { c, opts: shuffle([c.a, ...distract]) };
     });
@@ -348,7 +370,7 @@
     cleanup = () => document.removeEventListener('keydown', key);
     draw();
   };
-  routes.quiz.tab = 'cbrn';
+  routes.quiz.tab = (cat) => (cat === 'tccc' ? 'tccc' : 'cbrn');
 
   // ---------- 모의 질의응답 (평가관 질문 → 말로 답 → 자가채점) ----------
   routes.exam = () => {
@@ -616,6 +638,308 @@
   };
   routes.write.tab = 'mind';
 
+
+  // ---------- TCCC ----------
+  const grp = (id) => TCCC_GROUPS.find((g) => g.id === id);
+  const sayOf = (it) => (S.tcccSay[it.n] != null ? S.tcccSay[it.n] : it.say);
+  const kwOf = (it) => (S.tcccSay[it.n] != null ? [] : it.kw);
+  const speak = (text, onend) => {
+    try {
+      const u = new SpeechSynthesisUtterance(text.replace(/[()]/g, ' '));
+      u.lang = 'ko-KR'; u.rate = 1.05;
+      if (onend) u.onend = onend;
+      speechSynthesis.speak(u);
+    } catch (e) { onend && onend(); }
+  };
+  const hush = () => { try { speechSynthesis.cancel(); } catch (e) {} };
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const listener = (onText) => {
+    if (!SR) return null;
+    const r = new SR();
+    r.lang = 'ko-KR'; r.continuous = true; r.interimResults = true;
+    let on = false;
+    r.onresult = (e) => {
+      let fin = '', tmp = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) fin += e.results[i][0].transcript + ' ';
+        else tmp += e.results[i][0].transcript;
+      }
+      onText(fin, tmp);
+    };
+    r.onend = () => { if (on) { try { r.start(); } catch (e) {} } };
+    r.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { on = false; onText(null, null, '마이크 권한이 거부됐어요'); } };
+    return { start() { on = true; try { r.start(); } catch (e) {} }, stop() { on = false; try { r.abort(); } catch (e) {} } };
+  };
+  const tcccScore = (vals) => {
+    // vals: {n: 0|0.5|1}  → 평가요소 배점 × 항목 평균
+    const rows = TCCC_GROUPS.map((g) => {
+      const items = TCCC.filter((it) => it.g === g.id);
+      const avg = items.reduce((a, it) => a + (vals[it.n] || 0), 0) / items.length;
+      return { g, got: Math.round(g.pts * avg * 10) / 10 };
+    });
+    const total = Math.round(rows.reduce((a, r) => a + r.got, 0) * 10) / 10;
+    const pct = Math.round((total / 50) * 100);
+    const label = pct >= 90 ? '특급' : pct >= 80 ? '합격 (80%)' : pct >= 70 ? '합격 (70%)' : '불합격';
+    return { rows, total, pct, label, conv: Math.round(total * 0.4 * 10) / 10 };
+  };
+  const phases = () => [...new Set(TCCC_GROUPS.map((g) => g.phase))];
+
+  routes.tccc = () => {
+    setHeader('TCCC', false);
+    const t = S.tccc;
+    app.innerHTML = `
+      <div class="sit-card">
+        <small>메시지 카드 ① · 상황부여</small>
+        <p>${esc(TCCC_SITUATION.card)}</p>
+        <ul>${TCCC_SITUATION.injuries.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+        <em>⏱ ${esc(TCCC_SITUATION.time)}</em>
+      </div>
+      <div class="tip">🗣 <b>실기 평가</b> — 손으로 행동하면서 <b>입으로 크게 말해야</b> 점수가 나와요. 대사를 소리 내어 외우고, 리허설은 실제 장비(또는 흉내)를 들고 해보세요.</div>
+      <div class="mode-grid">
+        <a class="mode" href="#tsteps"><span class="mi">📋</span><b>절차 학습</b><small>41단계 · 대사 듣기/수정</small></a>
+        <a class="mode hot" href="#trun"><span class="mi">⏱️</span><b>15분 리허설</b><small>${t.best ? `최고 ${t.best}% · ${t.tries}회` : '말하며 실전처럼'}</small></a>
+        <a class="mode" href="#torder"><span class="mi">🔢</span><b>순서 맞추기</b><small>처치 흐름 외우기</small></a>
+        <a class="mode" href="#flash/tccc"><span class="mi">🃏</span><b>핵심 카드</b><small>숫자·위치 ${TCCC_CARDS.length}장</small></a>
+        <a class="mode" href="#quiz/tccc"><span class="mi">⚡</span><b>객관식</b><small>10문제 · 점수</small></a>
+        <a class="mode" href="#tsheet"><span class="mi">📄</span><b>평가표</b><small>배점 · 감점기준</small></a>
+      </div>
+      <h2 class="sec-title">처치 흐름 한눈에</h2>
+      <div class="flow">${phases().map((ph) => `<div class="flow-ph"><b>${esc(ph)}</b><div>${TCCC_GROUPS.filter((g) => g.phase === ph).map((g) => `<span>${esc(g.name)}</span>`).join('<i>›</i>')}</div></div>`).join('')}</div>
+    `;
+  };
+
+  // 절차 학습
+  routes.tsteps = () => {
+    setHeader('TCCC 절차 학습', '#tccc');
+    let playing = false;
+    const draw = () => {
+      app.innerHTML = `
+        <div class="toolbar"><button class="pill" id="playall">${playing ? '■ 정지' : '▶ 대사 전체 듣기'}</button></div>
+        ${phases().map((ph) => `<h2 class="sec-title">${esc(ph)}</h2>
+          ${TCCC_GROUPS.filter((g) => g.phase === ph).map((g) => `
+            <div class="panel steps-g">
+              <h3>${esc(g.name)} <span class="pts">${g.pts}점</span></h3>
+              ${TCCC.filter((it) => it.g === g.id).map((it) => `
+                <div class="tstep" id="ts${it.n}">
+                  <div class="tn">${it.n}</div>
+                  <div class="tb">
+                    ${it.cue ? `<div class="cue">📢 평가관: ${esc(it.cue)}</div>` : ''}
+                    <p class="tt">${esc(it.t)}</p>
+                    ${it.note ? `<p class="tnote">• ${esc(it.note)}</p>` : ''}
+                    <div class="say"><span>🗣</span><b>${esc(sayOf(it))}</b>
+                      <button class="ib" data-play="${it.n}" aria-label="듣기">🔊</button>
+                      <button class="ib" data-edit="${it.n}" aria-label="대사 수정">✏️</button></div>
+                  </div>
+                </div>`).join('')}
+            </div>`).join('')}`).join('')}
+        <p class="hint">✏️ 로 대사를 우리 부대 방식에 맞게 바꿀 수 있어요 (이 기기에 저장).</p>`;
+      $$('[data-play]').forEach((b) => { b.onclick = () => { hush(); speak(sayOf(TCCC.find((x) => x.n === +b.dataset.play))); }; });
+      $$('[data-edit]').forEach((b) => { b.onclick = () => {
+        const it = TCCC.find((x) => x.n === +b.dataset.edit);
+        const v = prompt(`${it.n}번 대사 (비우면 기본값으로)`, sayOf(it));
+        if (v === null) return;
+        if (v.trim() === '' || v.trim() === it.say) delete S.tcccSay[it.n]; else S.tcccSay[it.n] = v.trim();
+        save(); draw(); $('#ts' + it.n).scrollIntoView({ block: 'center' });
+      }; });
+      $('#playall').onclick = () => {
+        if (playing) { playing = false; hush(); draw(); return; }
+        playing = true; draw();
+        let k = 0;
+        const next = () => {
+          if (!playing || k >= TCCC.length) { playing = false; $$('.tstep.now').forEach((e) => e.classList.remove('now')); const b = $('#playall'); if (b) b.textContent = '▶ 대사 전체 듣기'; return; }
+          const it = TCCC[k++];
+          $$('.tstep.now').forEach((e) => e.classList.remove('now'));
+          const el = $('#ts' + it.n); if (el) { el.classList.add('now'); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+          speak(`${it.n}번. ${it.cue ? '평가관, ' + it.cue + ' ' : ''}${sayOf(it)}`, () => setTimeout(next, 350));
+        };
+        next();
+      };
+    };
+    cleanup = () => { playing = false; hush(); };
+    draw();
+  };
+  routes.tsteps.tab = 'tccc';
+
+  // 15분 리허설
+  routes.trun = () => {
+    setHeader('TCCC 리허설', '#tccc');
+    const opt = Object.assign({ mode: 'test', mic: !!SR, voice: true }, S.tccc.opt || {});
+    app.innerHTML = `
+      <div class="sit-card"><small>상황부여</small><p>${esc(TCCC_SITUATION.card)}</p><ul>${TCCC_SITUATION.injuries.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
+      <div class="panel">
+        <h3>모드</h3>
+        <div class="seg"><button data-m="test" class="${opt.mode === 'test' ? 'on' : ''}">실전 (내용 가림)</button><button data-m="practice" class="${opt.mode === 'practice' ? 'on' : ''}">연습 (내용 보임)</button></div>
+        <label class="sw row-sw"><input type="checkbox" id="o-mic" ${opt.mic ? 'checked' : ''} ${SR ? '' : 'disabled'}><span></span>음성인식으로 말한 키워드 체크 ${SR ? '' : '<small class="muted">(이 브라우저 미지원)</small>'}</label>
+        <label class="sw row-sw"><input type="checkbox" id="o-voice" ${opt.voice ? 'checked' : ''}><span></span>평가관 상황부여 음성 (17번·23번)</label>
+      </div>
+      <div class="tip">손은 행동, 입은 대사! 한 단계를 끝낼 때마다 스스로 ○ △ ✕ 로 채점하세요. 15분이 지나면 남은 항목은 감점돼요.</div>
+      <button class="btn block" id="start">▶ 15분 타이머 시작</button>`;
+    $$('.seg button').forEach((b) => { b.onclick = () => { opt.mode = b.dataset.m; $$('.seg button').forEach((x) => x.classList.toggle('on', x === b)); }; });
+    $('#start').onclick = () => {
+      opt.mic = $('#o-mic').checked; opt.voice = $('#o-voice').checked;
+      S.tccc.opt = opt; save();
+      run(opt);
+    };
+
+    const run = (opt) => {
+      document.body.dataset.route = 'trun-live';
+      const LIMIT = 15 * 60;
+      const t0 = Date.now();
+      const vals = {};
+      let i = 0, shown = opt.mode === 'practice', heard = '', interim = '', micMsg = '', done = false;
+      const lis = opt.mic ? listener((fin, tmp, err) => {
+        if (err) { micMsg = err; paintMic(); return; }
+        if (fin) heard += fin;
+        interim = tmp || '';
+        paintMic();
+      }) : null;
+      const left = () => Math.max(0, LIMIT - Math.floor((Date.now() - t0) / 1000));
+      const timer = setInterval(() => {
+        const el = $('#tm');
+        const l = left();
+        if (el) { el.textContent = fmtTime(l); el.classList.toggle('warn', l <= 180); }
+        if (l <= 0) finish(true);
+      }, 300);
+      let wl = null;
+      try { navigator.wakeLock && navigator.wakeLock.request('screen').then((w) => { wl = w; }).catch(() => {}); } catch (e) {}
+      cleanup = () => { clearInterval(timer); lis && lis.stop(); hush(); try { wl && wl.release(); } catch (e) {} };
+      lis && lis.start();
+
+      const paintMic = () => {
+        const box = $('#mic'); if (!box) return;
+        const it = TCCC[i];
+        const txt = heard + interim;
+        const kws = kwOf(it);
+        box.innerHTML = `
+          <div class="mic-head"><i class="dot ${micMsg ? '' : 'live'}"></i>${micMsg ? esc(micMsg) : '듣는 중…'}</div>
+          ${kws.length ? `<div class="kw-chips">${kws.map((k) => `<span class="chip ${recall(k, txt) >= 0.99 ? 'ok' : ''}">${esc(k)}</span>`).join('')}</div>` : ''}
+          <p class="heard">${esc(txt.slice(-120)) || '<span class="muted">말한 내용이 여기에 표시돼요</span>'}</p>`;
+      };
+      const draw = () => {
+        if (i >= TCCC.length) return finish(false);
+        const it = TCCC[i], g = grp(it.g);
+        heard = ''; interim = '';
+        shown = opt.mode === 'practice';
+        app.innerHTML = `
+          <div class="quiz-top"><span>${it.n} / ${TCCC.length}</span><span class="timer big" id="tm">${fmtTime(left())}</span><button class="pill ghost" id="stop">종료</button></div>
+          <div class="bar thin"><i style="width:${(i / TCCC.length) * 100}%;background:var(--red)"></i></div>
+          <div class="run-card">
+            <div class="run-g"><span>${esc(g.phase)}</span> › <b>${esc(g.name)}</b></div>
+            ${it.cue ? `<div class="cue big">📢 평가관: "${esc(it.cue)}"</div>` : ''}
+            <div class="run-body" id="rb">
+              ${shown ? `<p class="tt">${esc(it.t)}</p>${it.note ? `<p class="tnote">• ${esc(it.note)}</p>` : ''}<div class="say"><span>🗣</span><b>${esc(sayOf(it))}</b></div>`
+                : `<p class="recall">${it.n}번 — 무엇을 하고, 뭐라고 말하나요?</p><p class="muted">행동하며 크게 말한 뒤 확인하세요.</p>`}
+            </div>
+          </div>
+          ${lis ? '<div class="mic" id="mic"></div>' : ''}
+          <div id="ctrl">${shown ? gradeBtns() : '<button class="btn block" id="reveal">확인하기</button>'}</div>
+          <button class="linkbtn" id="prev" ${i ? '' : 'hidden'}>← 이전 단계</button>`;
+        paintMic();
+        if (opt.voice && it.cue) { hush(); speak('평가관. ' + it.cue); }
+        bind();
+      };
+      const gradeBtns = () => `<div class="self3">
+          <button class="sbtn bad" data-v="0">✕<small>못함</small></button>
+          <button class="sbtn mid" data-v="0.5">△<small>미흡</small></button>
+          <button class="sbtn good" data-v="1">○<small>완벽</small></button></div>`;
+      const bind = () => {
+        $('#stop').onclick = () => { if (confirm('리허설을 종료하고 채점할까요? (남은 항목은 0점)')) finish(true); };
+        const pv = $('#prev'); if (pv) pv.onclick = () => { i--; draw(); };
+        const rv = $('#reveal');
+        if (rv) rv.onclick = () => {
+          const it = TCCC[i];
+          $('#rb').innerHTML = `<p class="tt">${esc(it.t)}</p>${it.note ? `<p class="tnote">• ${esc(it.note)}</p>` : ''}<div class="say"><span>🗣</span><b>${esc(sayOf(it))}</b></div>`;
+          $('#ctrl').innerHTML = gradeBtns();
+          bind();
+        };
+        $$('.sbtn').forEach((b) => { b.onclick = () => { vals[TCCC[i].n] = +b.dataset.v; i++; draw(); }; });
+      };
+      const finish = (cut) => {
+        if (done) return; done = true;
+        const used = Math.min(LIMIT, Math.floor((Date.now() - t0) / 1000));
+        cleanup(); cleanup = null;
+        document.body.dataset.route = 'trun';
+        const r = tcccScore(vals);
+        const t = S.tccc;
+        const isBest = r.pct > (t.best || 0);
+        t.best = Math.max(t.best || 0, r.pct); t.tries = (t.tries || 0) + 1; t.last = r.pct;
+        logHistory('TCCC 리허설', `${r.total}/50 · ${r.label}`, r.pct);
+        const miss = TCCC.filter((it) => (vals[it.n] || 0) < 1);
+        app.innerHTML = result(r.pct, `${r.label} · ${r.total}/50점 (환산 ${r.conv}점) · ${fmtTime(used)}${cut && used >= LIMIT ? ' · 시간초과' : ''}${isBest ? ' · 🏆 최고 기록' : ''}`, [
+          '<button class="btn" id="retry">다시 하기</button>', '<a class="btn ghost" href="#tsteps">절차 복습</a>'
+        ]) + `
+          <div class="panel"><h3>평가요소별 점수</h3>
+            <table class="mopp score-t"><thead><tr><th>평가요소</th><th>배점</th><th>득점</th></tr></thead>
+            <tbody>${r.rows.map((x) => `<tr><td class="l">${esc(x.g.name)}</td><td>${x.g.pts}</td><td class="${x.got >= x.g.pts ? 'okc' : x.got ? 'midc' : 'ngc'}">${x.got}</td></tr>`).join('')}
+            <tr><th>합계</th><th>50</th><th>${r.total}</th></tr></tbody></table>
+            <p class="muted" style="font-size:12px;margin:8px 0 0">※ 항목 ○=1, △=0.5, ✕=0 을 평가요소 배점에 비례 환산한 자가 채점 결과예요.</p>
+          </div>
+          ${miss.length ? `<h2 class="sec-title">보완할 항목 ${miss.length}개</h2><div class="qa-list">${miss.map((it) => `<div class="qa ng"><b>${it.n}. ${esc(it.t)}</b><p>🗣 ${esc(sayOf(it))}</p></div>`).join('')}</div>` : ''}`;
+        $('#retry').onclick = render;
+        save();
+        if (isBest && r.pct >= 90) confetti();
+      };
+      if (opt.voice) speak('상황부여. ' + TCCC_SITUATION.card + '. 평가 시작.');
+      draw();
+    };
+  };
+  routes.trun.tab = 'tccc';
+
+  // 순서 맞추기
+  routes.torder = (sel = 'flow') => {
+    setHeader('TCCC 순서 맞추기', '#tccc');
+    const sets = [{ id: 'flow', name: '평가요소 흐름' }].concat(TCCC_GROUPS.filter((g) => TCCC.filter((it) => it.g === g.id).length >= 2).map((g) => ({ id: g.id, name: g.name })));
+    const cur = sets.find((x) => x.id === sel) || sets[0];
+    const items = cur.id === 'flow'
+      ? TCCC_GROUPS.slice(0, 10).map((g, k) => ({ k, label: g.name, sub: g.phase }))
+      : TCCC.filter((it) => it.g === cur.id).map((it, k) => ({ k, label: it.t.replace(/\?$/, ''), sub: sayOf(it) }));
+    let next = 0, miss = 0;
+    const shuffled = shuffle(items);
+    app.innerHTML = `
+      <div class="chips-scroll">${sets.map((x) => `<a href="#torder/${x.id}" class="${x.id === cur.id ? 'on' : ''}">${esc(x.name)}</a>`).join('')}</div>
+      <p class="hint">${cur.id === 'flow' ? '처치 순서대로' : '평가 순서대로'} 탭하세요 · <b id="ord-st">0 / ${items.length}</b></p>
+      <div class="ord-done" id="done"></div>
+      <div class="ord-pool">${shuffled.map((x) => `<button class="ord" data-k="${x.k}"><b>${esc(x.label)}</b>${cur.id === 'flow' ? `<small>${esc(x.sub)}</small>` : ''}</button>`).join('')}</div>
+      <div id="ores"></div>`;
+    $$('.ord').forEach((b) => { b.onclick = () => {
+      if (+b.dataset.k === next) {
+        next++;
+        b.remove();
+        $('#done').insertAdjacentHTML('beforeend', `<div class="ord ok"><i>${next}</i><b>${b.querySelector('b').innerHTML}</b></div>`);
+        $('#ord-st').textContent = `${next} / ${items.length}`;
+        if (next === items.length) {
+          const sc = Math.max(0, Math.round(((items.length - miss) / items.length) * 100));
+          logHistory('TCCC 순서', cur.name, sc);
+          const idx = sets.indexOf(cur);
+          $('#ores').innerHTML = `<div class="feedback ${miss ? 'bad' : 'good'}"><b>${sc}점 · 실수 ${miss}번</b></div>
+            <div class="btn-row"><button class="btn ghost" id="redo">다시</button>${sets[idx + 1] ? `<a class="btn" href="#torder/${sets[idx + 1].id}">다음: ${esc(sets[idx + 1].name)} →</a>` : ''}</div>`;
+          $('#redo').onclick = render;
+          if (!miss) confetti();
+        }
+      } else {
+        miss++; vibrate(60);
+        b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
+      }
+    }; });
+  };
+  routes.torder.tab = 'tccc';
+
+  // 평가표
+  routes.tsheet = () => {
+    setHeader('TCCC 평가표', '#tccc');
+    app.innerHTML = `
+      <div class="panel"><h3>등급 기준 (50점 만점)</h3>
+        <div class="grade-row"><span class="gS">특급 90%</span><span class="gA">합격 80%</span><span class="gB">합격 70%</span><span class="gD">불합격 60%↓</span></div>
+        <p class="muted" style="font-size:13px;margin:8px 0 0">평가표 환산 기준: 특급 18점 이상 / 합격 16점(80%)·14점(70%) / 불합격 13.9점 이하</p>
+      </div>
+      ${TCCC_GROUPS.map((g) => `
+        <div class="panel">
+          <h3>${esc(g.name)} <span class="pts">${g.pts}점</span> <small class="muted">${esc(g.phase)}</small></h3>
+          ${TCCC.filter((it) => it.g === g.id).map((it) => `<div class="sheet-row"><i>${it.n}</i><div><p>${esc(it.t)}</p>${it.note ? `<small>• ${esc(it.note)}</small>` : ''}</div></div>`).join('')}
+        </div>`).join('')}`;
+  };
+  routes.tsheet.tab = 'tccc';
+
   // ---------- 기록 ----------
   routes.stats = () => {
     setHeader('기록', false);
@@ -631,6 +955,11 @@
       <div class="panel">
         <h3>정신전력 최고점</h3>
         ${MIND.map((q) => { const b = (S.mind[q.id] || {}).best || 0; return `<div class="hbar"><span>${q.id}</span><div class="bar"><i style="width:${b}%"></i></div><b>${b}</b></div>`; }).join('')}
+      </div>
+      <div class="panel">
+        <h3>TCCC 리허설</h3>
+        <div class="hbar"><span>최고</span><div class="bar"><i style="width:${S.tccc.best || 0}%;background:var(--red)"></i></div><b>${S.tccc.best || 0}</b></div>
+        <p class="muted" style="margin:4px 0 0;font-size:13px">${S.tccc.tries ? `${S.tccc.tries}회 응시 · 최근 ${S.tccc.last}%` : '아직 응시 기록이 없어요.'}</p>
       </div>
       <h2 class="sec-title">최근 학습</h2>
       ${S.history.length ? `<div class="list">${S.history.slice(0, 30).map((h) => `<div class="row"><div class="grade g${grade(h.score)}">${grade(h.score)}</div><div class="row-body"><b>${esc(h.type)} · ${esc(h.title)}</b><span>${esc(h.at)}</span></div><div class="row-score">${h.score}점</div></div>`).join('')}</div>` : '<p class="muted center">아직 기록이 없어요.</p>'}

@@ -1,7 +1,7 @@
 {
   "name": "병기본 마스터 - 정신전력 · 화생방",
   "short_name": "병기본",
-  "description": "정신전력 백지암기와 화생방 질의응답으로 병기본평가 대비",
+  "description": "정신전력 백지암기 · 화생방 질의응답 · TCCC 실기로 병기본평가 대비",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
