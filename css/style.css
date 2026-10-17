@@ -479,3 +479,96 @@ b.conn { color: var(--text); font-weight: 800; text-decoration: underline; text-
 .cmp-item { background: var(--bg); border-radius: 10px; padding: 10px 12px; }
 .cmp-item .mine { margin: 6px 0 4px; color: var(--sub); }
 .cmp-item .model { margin: 0; }
+
+/* ===== 태블릿 · 가로 화면 ===== */
+@media (min-width: 900px) {
+  body { padding-left: calc(92px + env(safe-area-inset-left)); padding-bottom: 24px; }
+  /* 하단 탭 → 왼쪽 내비게이션 레일 */
+  .tabs {
+    top: 0; bottom: 0; left: 0; right: auto; width: calc(92px + env(safe-area-inset-left));
+    flex-direction: column; justify-content: center; gap: 6px;
+    padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom) calc(8px + env(safe-area-inset-left));
+    border-top: 0; border-right: 1px solid var(--line);
+  }
+  .tab { flex: none; padding: 10px 0; border-radius: 14px; font-size: 12px; }
+  .tab span { font-size: 26px; }
+  .tab.on { background: var(--primary-l); }
+  .tab.on span { transform: none; }
+  body[data-route="trun-live"], body[data-route="flash"], body[data-route="quiz"], body[data-route="exam"], body[data-route="write"], body[data-route="cloze"] { padding-left: env(safe-area-inset-left); }
+
+  .hdr { padding-left: 24px; padding-right: 24px; }
+  .hdr h1 { font-size: 22px; }
+  main { max-width: 1180px; padding: 12px 28px 32px; }
+
+  /* 홈 */
+  .hero { flex-direction: row; align-items: center; padding: 28px 32px; }
+  .hero h1 { font-size: 30px; }
+  .hero .rings { gap: 18px; margin-top: 0; }
+  .rings .ring, .rings .ring svg { width: 86px; height: 86px; }
+  .rings .ring { height: auto; }
+  .rings .ring b { top: 26px; font-size: 20px; }
+  .cards3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .cards3 .big-card { margin: 0; flex-direction: column; align-items: flex-start; }
+  .cards3 .bc-body { width: 100%; }
+  .cards3 .chev { display: none; }
+  .quick { grid-template-columns: repeat(6, 1fr); }
+
+  /* 그리드 확장 */
+  .mode-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+  .list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .qa-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .score-break { grid-template-columns: repeat(4, 1fr); }
+  .score-break.three { grid-template-columns: repeat(3, 1fr); }
+  .flow { display: grid; grid-template-columns: 1fr 1fr; }
+
+  /* 읽기/학습 화면은 가독성 폭으로 가운데 정렬 */
+  body[data-route="read"] main, body[data-route="initial"] main, body[data-route="cloze"] main,
+  body[data-route="write"] main, body[data-route="flow"] main, body[data-route="sorder"] main,
+  body[data-route="mq"] main, body[data-route="exam"] main, body[data-route="tsheet"] main,
+  body[data-route="torder"] main, body[data-route="trun"] main, body[data-route="wrong"] main { max-width: 920px; }
+  .doc { font-size: 18px; padding: 28px 32px; }
+  .paper { padding: 26px 30px; }
+  .sticky-act { max-width: 560px; margin-left: auto; margin-right: auto; }
+
+  /* 문항 화면: 단계 2열 */
+  body[data-route="mq"] .steps { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  body[data-route="mq"] .step.final { grid-column: 1 / -1; }
+
+  /* 플래시카드 · 퀴즈 */
+  body[data-route="flash"] main, body[data-route="quiz"] main { max-width: 860px; }
+  .fc { height: min(56vh, 480px); }
+  .fc-face p { font-size: 28px; }
+  .fc-face.back p { font-size: 24px; }
+  .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .opt { min-height: 72px; }
+
+  /* TCCC 절차 학습: 평가요소 카드 2열 */
+  body[data-route="tsteps"] main { max-width: 1180px; }
+  .tsteps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  .tsteps-grid .panel { margin: 0; }
+
+  /* TCCC 리허설: 왼쪽 단계 카드 / 오른쪽 음성인식·채점 */
+  body[data-route="trun-live"] main { max-width: 1180px; display: grid; grid-template-columns: 1.5fr 1fr; column-gap: 20px; align-content: start; }
+  body[data-route="trun-live"] .quiz-top, body[data-route="trun-live"] .bar.thin { grid-column: 1 / -1; }
+  body[data-route="trun-live"] .run-card { grid-column: 1; grid-row: 3 / span 4; min-height: 380px; padding: 26px; }
+  body[data-route="trun-live"] .run-body .tt { font-size: 22px; }
+  body[data-route="trun-live"] .run-body .say b { font-size: 20px; }
+  body[data-route="trun-live"] #mic, body[data-route="trun-live"] #ctrl, body[data-route="trun-live"] .linkbtn { grid-column: 2; }
+  body[data-route="trun-live"] #mic { margin-top: 0; }
+  body[data-route="trun-live"] .sbtn { height: 96px; font-size: 30px; }
+
+  /* 결과 화면 */
+  .result { padding: 32px 24px 14px; }
+}
+
+/* 큰 가로 화면: 홈 빠른 시작 등 여유 */
+@media (min-width: 1200px) {
+  .qa-list { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* 폰 가로 (높이 낮음) */
+@media (orientation: landscape) and (max-height: 520px) {
+  .fc { height: 64vh; }
+  .hdr { height: calc(46px + env(safe-area-inset-top)); }
+  .exam-card, .run-card { min-height: 0; }
+}

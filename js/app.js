@@ -163,6 +163,7 @@
       </section>
 
       <h2 class="sec-title">이어서 학습하기</h2>
+      <div class="cards3">
       <a class="big-card cbrn" href="#cbrn">
         <div class="bc-icon">☢️</div>
         <div class="bc-body">
@@ -191,6 +192,7 @@
         </div>
         <div class="chev">›</div>
       </a>
+      </div>
 
       <h2 class="sec-title">빠른 시작</h2>
       <div class="quick">
@@ -915,7 +917,7 @@
     const draw = () => {
       app.innerHTML = `
         <div class="toolbar"><button class="pill" id="playall">${playing ? '■ 정지' : '▶ 대사 전체 듣기'}</button></div>
-        ${phases().map((ph) => `<h2 class="sec-title">${esc(ph)}</h2>
+        ${phases().map((ph) => `<h2 class="sec-title">${esc(ph)}</h2><div class="tsteps-grid">
           ${TCCC_GROUPS.filter((g) => g.phase === ph).map((g) => `
             <div class="panel steps-g">
               <h3>${esc(g.name)} <span class="pts">${g.pts}점</span></h3>
@@ -931,7 +933,7 @@
                       <button class="ib" data-edit="${it.n}" aria-label="대사 수정">✏️</button></div>
                   </div>
                 </div>`).join('')}
-            </div>`).join('')}`).join('')}
+            </div>`).join('')}</div>`).join('')}
         <p class="hint">✏️ 로 대사를 우리 부대 방식에 맞게 바꿀 수 있어요 (이 기기에 저장).</p>`;
       $$('[data-play]').forEach((b) => { b.onclick = () => { hush(); speak(sayOf(TCCC.find((x) => x.n === +b.dataset.play))); }; });
       $$('[data-edit]').forEach((b) => { b.onclick = () => {
